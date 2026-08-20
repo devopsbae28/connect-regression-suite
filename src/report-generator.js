@@ -184,6 +184,20 @@ function generateHtmlReport(options) {
       max-height: 200px;
       overflow-y: auto;
     }
+    .prompt {
+      font-family: 'Monaco', 'Consolas', monospace;
+      font-size: 0.8rem;
+      background: #f8fafc;
+      border-left: 3px solid #94a3b8;
+      padding: 0.5rem 0.6rem;
+      border-radius: 4px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 120px;
+      overflow-y: auto;
+      color: #334155;
+      max-width: 420px;
+    }
     .error-message {
       background: #fef2f2;
       border: 1px solid #fecaca;
@@ -317,8 +331,8 @@ function generateTestCard(result, index) {
           <th>Step</th>
           <th>Observation</th>
           <th>Status</th>
+          <th>Prompt</th>
           <th>Timestamp</th>
-          <th>Details</th>
         </tr>
       </thead>
       <tbody>
@@ -326,15 +340,18 @@ function generateTestCard(result, index) {
           const rowClass = record.Status === 'FAILED' ? 'failed-row' : record.Status === 'PASSED' ? 'passed-row' : '';
           const statusBadge = `<span class="status-badge ${record.Status?.toLowerCase() || ''}">${record.Status || 'UNKNOWN'}</span>`;
           const timestamp = record.Timestamp ? new Date(record.Timestamp).toLocaleTimeString() : 'N/A';
-          const recordDetail = record.Record ? `<div class="record-detail">${escapeHtml(formatRecord(record.Record))}</div>` : '';
+          const prompt = extractPrompt(record.Record);
+          const promptCell = prompt
+            ? `<div class="prompt">${escapeHtml(prompt)}</div>`
+            : '<span style="color:#9ca3af;font-style:italic;">—</span>';
 
           return `
         <tr class="${rowClass}">
           <td>${rIndex + 1}</td>
           <td>${escapeHtml(record.ObservationId || `Step ${rIndex + 1}`)}</td>
           <td>${statusBadge}</td>
+          <td>${promptCell}</td>
           <td>${timestamp}</td>
-          <td>${recordDetail}</td>
         </tr>`;
         }).join('')}
       </tbody>
@@ -399,6 +416,24 @@ function tryParseRecordDetail(recordStr) {
     return JSON.parse(recordStr);
   } catch {
     return { message: recordStr };
+  }
+}
+
+/**
+ * Extract the prompt/message text a MessageReceived observation was validating.
+ * Returns null for non-message steps (e.g., TestInitiated, Completion).
+ */
+function extractPrompt(recordStr) {
+  if (!recordStr) return null;
+  try {
+    const d = JSON.parse(recordStr);
+    const ev = d.Event || {};
+    if (ev.Type === 'MessageReceived') {
+      return (ev.Properties && (ev.Properties.Text || ev.Properties.SSML)) || null;
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
 
