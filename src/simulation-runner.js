@@ -129,111 +129,147 @@ class SimulationRunner {
 
   /**
    * Build the JSON content string for the Connect test case API.
+   * Emits the verified Testing Language schema:
+   *   { Version, Metadata, Observations: [{ Identifier, Event, Actions, Transitions }] }
+   * Observations are chained sequentially via Transitions.NextObservations.
    */
   buildTestContent(testCase) {
-    const interactionGroups = testCase.interactionGroups.map((group, index) => {
-      const ig = {
-        id: group.id || `interaction_group_${index + 1}`,
-        observe: this.buildObserveBlock(group.observe),
+    const groups = testCase.interactionGroups;
+    const observations = groups.map((group, index) => {
+      const id = group.id || `obs_${index + 1}`;
+      const nextId = index < groups.length - 1
+        ? (groups[index + 1].id || `obs_${index + 2}`)
+        : null;
+
+      const obs = {
+        Identifier: id,
+        Event: this.buildEvent(group.observe, id),
+        Actions: [],
+        Transitions: { NextObservations: nextId ? [nextId] : [] }
       };
 
-      // Add transitions (sequential by default)
-      if (index > 0) {
-        ig.depends_on = testCase.interactionGroups[index - 1].id || `interaction_group_${index}`;
-      }
-
-      // Add check block if present
+      // Check/Assert blocks first, then actions (send input / end / override).
       if (group.check && group.check.length > 0) {
-        ig.check = group.check.map(c => this.buildCheckBlock(c));
+        obs.Actions.push(...group.check.map((c, i) => this.buildAssert(c, `${id}-assert-${i}`)));
       }
-
-      // Add actions block if present
       if (group.actions && group.actions.length > 0) {
-        ig.actions = group.actions.map(a => this.buildActionBlock(a));
+        obs.Actions.push(...group.actions.map((a, i) => this.buildActionBlock(a, `${id}-act-${i}`)));
       }
-
-      return ig;
+      return obs;
     });
 
-    return JSON.stringify({ interaction_groups: interactionGroups });
+    return JSON.stringify({ Version: '2019-10-30', Metadata: {}, Observations: observations });
   }
 
   /**
-   * Build an observe block for the API content.
+   * Build the Event object for an observation (verified schema).
+   * Actor is always "System" for observed events.
    */
-  buildObserveBlock(observe) {
-    const block = { type: observe.type };
+  buildEvent(observe, obsId) {
+    const evt = { Identifier: `evt-${obsId}`, Actor: 'System' };
 
-    if (observe.type === 'message_received') {
-      block.content = observe.content;
-      if (observe.match_type) {
-        block.match_type = observe.match_type; // "Contains" or "Similarity"
+    switch (observe.type) {
+      case 'test_started':
+        evt.Type = 'TestInitiated';
+        evt.Properties = {};
+        break;
+
+      case 'test_completed':
+        evt.Type = 'TestCompleted';
+        evt.Properties = {};
+        break;
+
+      case 'message_received': {
+        evt.Type = 'MessageReceived';
+        // MatchingCriteria is an OBJECT, INSIDE Properties: { "Type": "Similarity" | "Inclusion" }.
+        // Accept config shorthand `match` ("Similarity"|"Inclusion"); default to Similarity.
+        const matchType = observe.match === 'Inclusion' ? 'Inclusion' : 'Similarity';
+        evt.Properties = {
+          Text: observe.content,
+          MatchingCriteria: { Type: matchType }
+        };
+        break;
       }
+
+      case 'action_triggered':
+        evt.Type = 'FlowActionStarted';
+        // ActionParameters carrying the specific resource identity is REQUIRED for a match
+        // (e.g., { LambdaFunctionARN } for Lambda, { QueueId } for a queue transfer).
+        evt.Properties = {
+          ActionType: observe.actionType,
+          ActionParameters: observe.actionParameters || {}
+        };
+        break;
+
+      default:
+        evt.Type = observe.type;
+        evt.Properties = observe.properties || {};
     }
 
-    if (observe.type === 'action_triggered') {
-      block.action_type = observe.action_type;
-      if (observe.action_name) {
-        block.action_name = observe.action_name;
-      }
-    }
-
-    return block;
+    return evt;
   }
 
   /**
-   * Build a check block for the API content.
+   * Build an Assert action (validates an attribute). Note: Assert Parameters do NOT echo ActionType.
    */
-  buildCheckBlock(check) {
-    const block = {
-      type: check.type,
-      key: check.key,
-      expected_value: check.expectedValue,
+  buildAssert(check, id) {
+    return {
+      Identifier: id,
+      Type: 'Assert',
+      Parameters: {
+        Namespace: check.namespace || check.key,
+        Operator: check.operator || 'Equals',
+        Operand: check.operand !== undefined ? check.operand : check.expectedValue
+      },
+      Transitions: {}
     };
-
-    if (check.operator) {
-      block.operator = check.operator;
-    }
-
-    return block;
   }
 
   /**
-   * Build an action block for the API content.
+   * Build an action block for the API content (verified schema).
    */
-  buildActionBlock(action) {
+  buildActionBlock(action, id) {
     switch (action.type) {
       case 'override_resources':
-        return formatOverrideForApi(action);
+      case 'override':
+        return formatOverrideForApi(action, id);
 
       case 'send_dtmf':
         return {
-          type: 'send_instructions',
-          parameters: {
-            input_type: 'dtmf',
-            value: action.value
-          }
+          Identifier: id,
+          Type: 'SendInstruction',
+          Actor: 'Customer',
+          Parameters: {
+            ActionType: 'SendInstruction',
+            Actor: 'Customer',
+            Instruction: { Type: 'DtmfInput', Properties: { Value: action.value } }
+          },
+          Transitions: {}
         };
 
       case 'send_text':
         return {
-          type: 'send_instructions',
-          parameters: {
-            input_type: 'text',
-            value: action.value
-          }
+          Identifier: id,
+          Type: 'SendInstruction',
+          Actor: 'Customer',
+          Parameters: {
+            ActionType: 'SendInstruction',
+            Actor: 'Customer',
+            Instruction: { Type: 'TextInput', Properties: { Value: action.value } }
+          },
+          Transitions: {}
         };
 
       case 'end_test':
         return {
-          type: 'test_control',
-          parameters: {
-            action: 'end_test'
-          }
+          Identifier: id,
+          Type: 'TestControl',
+          Parameters: { ActionType: 'TestControl', Command: { Type: 'EndTest' } },
+          Transitions: {}
         };
 
       default:
-        return action; // Pass through as-is for custom action types
+        return action; // Pass through for custom/pre-built action objects
     }
   }
 

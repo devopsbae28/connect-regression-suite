@@ -137,12 +137,24 @@ below is verified against a working, published test case and matches the current
 |---------------------|----------------------------------------------------------------------------|
 | `TestInitiated`     | `{}`                                                                        |
 | `TestCompleted`     | `{}`                                                                        |
-| `MessageReceived`   | `{ "Text": "<expected>" }` + sibling `"MatchingCriteria": "Similarity"|"Contains"` |
+| `MessageReceived`   | `{ "Text": "<expected>", "MatchingCriteria": { "Type": "Similarity" } }`    |
 | `FlowActionStarted` | `{ "ActionType": "<flowActionType>", "ActionParameters": { ... } }`         |
 
-`MatchingCriteria` is a **string** and a **sibling of `Properties`** inside `Event`
-(NOT inside Properties, NOT an object). Use `Similarity` for voice (audio is segmented,
-exact matches are brittle), `Contains` for exact substrings.
+**`MatchingCriteria` (VERIFIED, critical):** it is an **object INSIDE `Properties`**, of the
+form `{ "Type": "Similarity" }` or `{ "Type": "Inclusion" }`.
+
+- `Similarity` = semantic match (recommended for voice; audio is segmented so exact matches are brittle).
+- `Inclusion` = observed message contains the specified text.
+- **Do NOT** pass `MatchingCriteria` as a bare string (e.g. `"Similarity"`) or as a sibling of
+  `Properties`. A string value publishes but is silently normalized to empty `{}` at execution,
+  so the observation never matches and the test fails after a 5-minute `OBSERVE_EVENT` timeout.
+- **Do NOT** use `"Contains"` — that is the console UI label; the API enum is `"Inclusion"`.
+- The object form placed as a *sibling* of `Properties` publishes but fails at execution with
+  `INITIALIZATION_FAILURE: invalid execution parameters`. It must be inside `Properties`.
+
+For `MessageReceived`, `Properties` also accepts (mutually exclusive with `Text`): `PromptId`,
+`SSML`, or `Media { Uri, SourceType, MediaType }`. Reference:
+docs.aws.amazon.com/connect/latest/devguide/testing-language-events-message-received.html
 
 ### 4.4 Action
 ```json
@@ -193,7 +205,8 @@ NumberGreaterThan, NumberGreaterOrEqualTo, NumberLessThan, NumberLessOrEqualTo, 
 - `Version` must be exactly `"2019-10-30"`.
 - Omit `Usage` (server default) — or match exact casing if you must include it.
 - `Event.Identifier` required.
-- `MatchingCriteria` = string, sibling of `Properties`.
+- `MatchingCriteria` = object `{ "Type": "Similarity" | "Inclusion" }` **inside `Properties`** (not a
+  bare string, not a sibling; `"Contains"` is invalid — use `"Inclusion"`). See §4.3.
 - Every non-Assert action `Parameters` must echo `ActionType`; `Assert` must NOT.
 - DTMF `Value` is a number.
 - `MockResponse.ExecutionResult.Value` must be a **JSON-serialized string**, not an object
@@ -224,7 +237,7 @@ messaging). Therefore:
    | `action_triggered` (flow action)   | Highest — structural | `TransferContactToQueue`, `InvokeLambdaFunction`, `CheckHoursOfOperation`, Lex bot connect |
    | `check` / `Assert` on attributes    | High — data | `$.Queue.Name Equals "Sales"`, `$.Attributes.verified Equals "true"` |
    | `MessageReceived` + `Similarity`    | Medium — semantic | tolerant of minor wording changes |
-   | `MessageReceived` + `Contains`      | Low — exact substring | brittle; breaks on any copy change |
+   | `MessageReceived` + `Inclusion`     | Low — substring | brittle; breaks on any copy change |
 
    For "did the caller reach the right place," assert on the **routing event + target
    resource** (e.g., queue transfer + `$.Queue.Name`) rather than the prompt text. This is
