@@ -32,7 +32,9 @@ class SimulationRunner {
   }
 
   /**
-   * Execute all test cases with concurrency control.
+   * Execute all test cases with a worker-pool that:
+   *  - never runs more than `concurrency` executions at once, and
+   *  - resolves only after EVERY test has reached a terminal state.
    *
    * @param {Array} testCases - Array of processed test case definitions
    * @returns {Array} Array of result objects with status and execution details
@@ -40,18 +42,15 @@ class SimulationRunner {
   async executeAll(testCases) {
     const results = [];
     const queue = [...testCases];
-    const inFlight = new Set();
 
-    const processNext = async () => {
-      if (queue.length === 0) return;
-
-      const testCase = queue.shift();
-      const promise = this.executeSingle(testCase)
-        .then(result => {
-          results.push(result);
-          inFlight.delete(promise);
-        })
-        .catch(err => {
+    // Each worker pulls from the shared queue until it is empty.
+    const worker = async () => {
+      while (queue.length > 0) {
+        const testCase = queue.shift();
+        if (!testCase) break;
+        try {
+          results.push(await this.executeSingle(testCase));
+        } catch (err) {
           results.push({
             name: testCase.name,
             flowId: testCase.flowId,
@@ -62,35 +61,20 @@ class SimulationRunner {
             executionRecords: [],
             hasHoursOverride: testCase.hasHoursOverride || false
           });
-          inFlight.delete(promise);
-        });
-
-      inFlight.add(promise);
-
-      // If we have capacity, start more
-      if (inFlight.size < this.concurrency && queue.length > 0) {
-        await processNext();
+        }
       }
     };
 
-    // Start initial batch
-    const initialBatch = Math.min(this.concurrency, queue.length);
-    const startPromises = [];
-    for (let i = 0; i < initialBatch; i++) {
-      startPromises.push(processNext());
+    // Spawn up to `concurrency` workers. Promise.all resolves ONLY when all
+    // workers have drained the queue AND every in-flight execution completed —
+    // guaranteeing the report is generated after ALL tests finish, not just
+    // the first batch.
+    const workerCount = Math.min(this.concurrency, queue.length);
+    const workers = [];
+    for (let i = 0; i < workerCount; i++) {
+      workers.push(worker());
     }
-    await Promise.all(startPromises);
-
-    // Wait for all in-flight to complete, starting new ones as slots open
-    while (inFlight.size > 0 || queue.length > 0) {
-      if (inFlight.size > 0) {
-        await Promise.race([...inFlight]);
-        // Start next if queue has items
-        if (queue.length > 0 && inFlight.size < this.concurrency) {
-          await processNext();
-        }
-      }
-    }
+    await Promise.all(workers);
 
     return results;
   }
@@ -388,29 +372,28 @@ class SimulationRunner {
   async executeExisting(testCaseIds) {
     const results = [];
     const queue = [...testCaseIds];
-    const inFlight = new Set();
 
-    const processNext = async () => {
-      if (queue.length === 0) return;
-      const tc = queue.shift();
-      const promise = this.executeExistingSingle(tc)
-        .then(result => { results.push(result); inFlight.delete(promise); })
-        .catch(err => {
+    const worker = async () => {
+      while (queue.length > 0) {
+        const tc = queue.shift();
+        if (!tc) break;
+        try {
+          results.push(await this.executeExistingSingle(tc));
+        } catch (err) {
           results.push({ name: tc.name || tc.testCaseId, status: 'FAILED', error: err.message, executionRecords: [] });
-          inFlight.delete(promise);
-        });
-      inFlight.add(promise);
-      if (inFlight.size < this.concurrency && queue.length > 0) await processNext();
+        }
+      }
     };
 
-    const initialBatch = Math.min(this.concurrency, queue.length);
-    for (let i = 0; i < initialBatch; i++) await processNext();
-    while (inFlight.size > 0 || queue.length > 0) {
-      if (inFlight.size > 0) {
-        await Promise.race([...inFlight]);
-        if (queue.length > 0 && inFlight.size < this.concurrency) await processNext();
-      }
+    // Spawn up to `concurrency` workers; Promise.all resolves only after every
+    // test reaches a terminal state (report generated after ALL complete).
+    const workerCount = Math.min(this.concurrency, queue.length);
+    const workers = [];
+    for (let i = 0; i < workerCount; i++) {
+      workers.push(worker());
     }
+    await Promise.all(workers);
+
     return results;
   }
 
