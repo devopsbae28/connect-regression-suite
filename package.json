@@ -1,0 +1,29 @@
+{
+  "name": "connect-regression-suite",
+  "version": "1.0.0",
+  "description": "Amazon Connect Contact Flow Regression Testing Suite using Connect Testing Simulations API",
+  "main": "src/index.js",
+  "bin": {
+    "connect-test": "./src/index.js"
+  },
+  "scripts": {
+    "test": "node src/index.js",
+    "test:dry-run": "node src/index.js --dry-run",
+    "report": "open reports/latest-report.html"
+  },
+  "keywords": [
+    "amazon-connect",
+    "contact-center",
+    "regression-testing",
+    "simulation",
+    "IVR"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-connect": "3.705.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

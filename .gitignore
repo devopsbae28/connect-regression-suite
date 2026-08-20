@@ -1,0 +1,11 @@
+node_modules/
+reports/
+*.log
+.env
+.DS_Store
+
+# Per-environment configs contain real resource IDs/ARNs — never commit them.
+# The placeholder template (suite-config.example.json) IS committed.
+tests/live-*.json
+tests/*-suite-config.json
+!tests/suite-config.example.json
