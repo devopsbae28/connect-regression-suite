@@ -83,8 +83,8 @@ Each test case represents one contact flow scenario to validate:
   "description": "Human-readable description",
   "flowId": "connect-flow-id",
   "channel": "VOICE_CALL",
-  "sourcePhoneNumber": "+14045551234",
-  "destinationPhoneNumber": "+14045559876",
+  "sourcePhoneNumber": "+1XXXXXXXXXX",
+  "destinationPhoneNumber": "+1XXXXXXXXXX",
   "interactionGroups": [...]
 }
 ```

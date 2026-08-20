@@ -7,8 +7,8 @@
       "description": "Validates that the main IVR flow plays the welcome prompt on call initiation",
       "flowId": "FLOW_ID_FOR_MAIN_IVR",
       "channel": "VOICE_CALL",
-      "sourcePhoneNumber": "+14045551234",
-      "destinationPhoneNumber": "+14045559876",
+      "sourcePhoneNumber": "+1XXXXXXXXXX",
+      "destinationPhoneNumber": "+1XXXXXXXXXX",
       "interactionGroups": [
         {
           "id": "test_start",
@@ -36,8 +36,8 @@
       "description": "Validates DTMF option 1 routes to Water Services queue",
       "flowId": "FLOW_ID_FOR_MAIN_IVR",
       "channel": "VOICE_CALL",
-      "sourcePhoneNumber": "+14045551234",
-      "destinationPhoneNumber": "+14045559876",
+      "sourcePhoneNumber": "+1XXXXXXXXXX",
+      "destinationPhoneNumber": "+1XXXXXXXXXX",
       "interactionGroups": [
         {
           "id": "test_start",
@@ -86,8 +86,8 @@
       "description": "Validates DTMF option 2 routes to Billing queue",
       "flowId": "FLOW_ID_FOR_MAIN_IVR",
       "channel": "VOICE_CALL",
-      "sourcePhoneNumber": "+14045551234",
-      "destinationPhoneNumber": "+14045559876",
+      "sourcePhoneNumber": "+1XXXXXXXXXX",
+      "destinationPhoneNumber": "+1XXXXXXXXXX",
       "interactionGroups": [
         {
           "id": "test_start",
@@ -136,8 +136,8 @@
       "description": "Validates after-hours message is played when calling outside business hours",
       "flowId": "FLOW_ID_FOR_MAIN_IVR",
       "channel": "VOICE_CALL",
-      "sourcePhoneNumber": "+14045551234",
-      "destinationPhoneNumber": "+14045559876",
+      "sourcePhoneNumber": "+1XXXXXXXXXX",
+      "destinationPhoneNumber": "+1XXXXXXXXXX",
       "interactionGroups": [
         {
           "id": "test_start",
@@ -206,8 +206,8 @@
       "description": "Validates the Lambda function invocation for customer lookup sets attributes correctly",
       "flowId": "FLOW_ID_FOR_CUSTOMER_LOOKUP",
       "channel": "VOICE_CALL",
-      "sourcePhoneNumber": "+14045551234",
-      "destinationPhoneNumber": "+14045559876",
+      "sourcePhoneNumber": "+1XXXXXXXXXX",
+      "destinationPhoneNumber": "+1XXXXXXXXXX",
       "interactionGroups": [
         {
           "id": "test_start",
