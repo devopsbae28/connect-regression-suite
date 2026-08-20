@@ -290,22 +290,33 @@ Lambda (Value MUST be a JSON string):
   "Response": { "Type": "ExecutionResult",
     "ExecutionResult": { "Value": "{\"Key\":\"Val\"}" } } }
 ```
-CheckHoursOfOperation (return open/closed without a real check):
-```json
-"Strategy": { "Type": "MockResponse",
-  "Response": { "Type": "ExecutionResult", "ExecutionResult": { "Value": "InHours" } } }
-// or "OutOfHours" to exercise after-hours branches
-```
+> **CheckHoursOfOperation does NOT support MockResponse (VERIFIED).** Every MockResponse
+> variant for `CheckHoursOfOperation` (`Value: "InHours"|"OutOfHours"`, JSON-string, Branch,
+> etc.) is rejected at publish with `InvalidTestCaseException`. To force open/closed, use
+> **SubstituteResource** (§6.2) pointing at an alternate hours-of-operation resource. Create a
+> dedicated always-open and always-closed HoO and substitute the appropriate one. MockResponse
+> is (so far) confirmed only for `InvokeLambdaFunction`.
 
 ### 6.2 SubstituteResource — swap in a safe alternate resource by ARN
 ```json
 "Strategy": { "Type": "SubstituteResource", "SubstituteArn": "<ALTERNATE_RESOURCE_ARN>" }
 ```
+This is the strategy for **CheckHoursOfOperation** (substitute an always-open / always-closed
+HoO to exercise business-hours vs after-hours branches) and for swapping queues to an
+agent-free test queue. Example (force after-hours):
+```json
+"Properties": {
+  "ActionType": "CheckHoursOfOperation",
+  "ActionParameters": { "HoursOfOperationId": "<ALWAYS_CLOSED_HOO_ARN>" },
+  "Strategy": { "Type": "SubstituteResource", "SubstituteArn": "<ALWAYS_CLOSED_HOO_ARN>" }
+}
+```
 
 **Requirement:** Any test whose target flow invokes an external resource with side effects
 (Lambda, external HTTP via Lambda, payment, DB writes) MUST mock that resource with
-`MockResponse`, OR substitute a sandbox resource. The config loader SHOULD warn if a flow
-known to contain such a block is tested without an override (best-effort; see 9.3).
+`MockResponse` (Lambda) or substitute a sandbox resource (`SubstituteResource`, incl. hours).
+The config loader SHOULD warn if a flow known to contain such a block is tested without an
+override (best-effort; see 9.3).
 
 ---
 
