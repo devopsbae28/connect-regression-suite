@@ -101,10 +101,9 @@ Note: supplying `DestinationPhoneNumber` without `SourcePhoneNumber` is rejected
 
 ## 4. Testing Language Content Schema (VERIFIED)
 
-The `Content` field is a JSON **string** (JSON-stringify the document). The published AWS
-docs example contains literal JSON syntax errors and, even when corrected, several field
-conventions differ from what actually validates. The following is the **empirically verified**
-working schema.
+The `Content` field is a JSON **string** (JSON-stringify the document). The official schema
+is documented in the AWS Connect Developer Guide (Testing Language reference); the schema
+below is verified against a working, published test case and matches the current docs.
 
 ### 4.1 Root
 ```json
@@ -190,7 +189,7 @@ NumberGreaterThan, NumberGreaterOrEqualTo, NumberLessThan, NumberLessOrEqualTo, 
   "Transitions": {} }
 ```
 
-### 4.5 Verified gotchas (capture in code comments)
+### 4.5 Key schema rules (capture in code comments)
 - `Version` must be exactly `"2019-10-30"`.
 - Omit `Usage` (server default) — or match exact casing if you must include it.
 - `Event.Identifier` required.
@@ -198,11 +197,10 @@ NumberGreaterThan, NumberGreaterOrEqualTo, NumberLessThan, NumberLessOrEqualTo, 
 - Every non-Assert action `Parameters` must echo `ActionType`; `Assert` must NOT.
 - DTMF `Value` is a number.
 - `MockResponse.ExecutionResult.Value` must be a **JSON-serialized string**, not an object
-  (object → internal `ClassCastException: ... cannot be cast to MockResponseStrategy`).
+  (passing an object fails validation with an internal
+  `ClassCastException: ... cannot be cast to MockResponseStrategy`). This is the key fix
+  for the previously-seen `InvalidTestCaseException` on `OverrideSystemBehavior` mocks.
 - `SAVED` skips validation entirely; only `PUBLISHED` validates and is executable.
-- `InvalidTestCaseException.Problems` is documented but returned empty — cannot self-diagnose;
-  distinguish parse failures ("Could not deserialize ... malformed test case string") from
-  semantic failures ("Invalid test case content").
 
 ---
 
