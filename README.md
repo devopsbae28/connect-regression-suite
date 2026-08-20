@@ -256,26 +256,12 @@ Provide test definitions in the `suite-config.json` format:
 4. **Set up hours overrides** for any flows with time-based routing
 5. **Include both happy-path and edge cases** — invalid inputs, timeouts, after-hours
 
-## Known Limitation: Content Schema
-
-The Amazon Connect Testing Simulations API (released Feb 2026) requires test case content to be PUBLISHED before execution. The **exact JSON serialization format** for the `Content` field that passes PUBLISHED validation is not publicly documented in the API reference — it is an internal schema used by the Connect Console's visual test designer.
-
-**Current workaround options:**
-
-1. **Create tests via the Console first**, then use this suite to `StartTestCaseExecution` + poll + collect results + generate reports on pre-existing published test cases. The `simulation-runner.js` already supports this flow.
-
-2. **Export content from console-created tests** using `DescribeTestCase` to capture the validated `Content` string, then use that format as a template for API-created tests.
-
-3. **Open an AWS Support case** requesting the Testing Language JSON schema documentation for programmatic test creation.
-
-The suite is designed so that once the content format is known (or tests are created via Console), the full end-to-end execution pipeline works: create → execute → poll → collect records → generate HTML report.
-
 ## Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
 | `AccessDeniedException` | Verify IAM permissions include all `connect:*TestCase*` actions |
 | Tests timing out | Ensure `end_test` actions are placed before queue transfers |
-| `InvalidTestCaseException` | Content schema not matching — see "Known Limitation" above; create tests via Console first |
+| `InvalidTestCaseException` | Verify the `Content` matches the Testing Language schema (see SPEC.md) |
 | Observe block fails | Verify prompt text matches what the flow actually plays |
 | `ResourceNotFoundException` | Confirm instance ID, flow IDs, and hours IDs are correct; test must be PUBLISHED to execute |
