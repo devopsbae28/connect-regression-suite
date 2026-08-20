@@ -92,19 +92,61 @@ function injectHoursOverride(testCase, override) {
 }
 
 /**
- * Build the Connect API test content JSON that includes hours override.
- * This formats the override for the actual API Content payload.
+ * Build the OverrideSystemBehavior action for the Connect Testing Language (verified schema).
  *
- * @param {object} overrideAction - The override action object
- * @returns {object} Formatted for Connect Testing Language
+ * Shape:
+ *   {
+ *     Identifier, Type: "OverrideSystemBehavior",
+ *     Parameters: {
+ *       ActionType: "OverrideSystemBehavior",
+ *       Behavior: { Type: "FlowAction", Properties: {
+ *         ActionType: "<InvokeLambdaFunction|CheckHoursOfOperation|TransferContactToQueue|...>",
+ *         ActionParameters: { <resource identity> },
+ *         Strategy: { Type: "MockResponse"|"SubstituteResource", ... }
+ *       }}
+ *     },
+ *     Transitions: {}
+ *   }
+ *
+ * Strategy notes:
+ *  - MockResponse: { Type:"MockResponse", Response:{ Type:"ExecutionResult", ExecutionResult:{ Value:"<string>" }}}
+ *    IMPORTANT: ExecutionResult.Value must be a JSON-SERIALIZED STRING, not an object.
+ *  - SubstituteResource: { Type:"SubstituteResource", SubstituteArn:"<arn>" }
+ *
+ * @param {object} action - normalized override action from config
+ * @param {string} id - action identifier
+ * @returns {object} OverrideSystemBehavior action object
  */
-function formatOverrideForApi(overrideAction) {
+function formatOverrideForApi(action, id = 'override') {
+  // Map friendly config fields to the flow ActionType + resource identity.
+  const kind = action.resource_type || action.overrideType || action.flowActionType;
+  const props = {
+    ActionType: action.flowActionType || action.resource_type_action || kind,
+    ActionParameters: action.actionParameters || action.resource_id
+      ? (action.actionParameters || { ResourceId: action.resource_id })
+      : {}
+  };
+
+  if (action.substituteArn) {
+    props.Strategy = { Type: 'SubstituteResource', SubstituteArn: action.substituteArn };
+  } else {
+    // MockResponse — Value MUST be a JSON-serialized string.
+    const raw = action.mockValue !== undefined ? action.mockValue : action.mock;
+    const value = typeof raw === 'string' ? raw : JSON.stringify(raw);
+    props.Strategy = {
+      Type: 'MockResponse',
+      Response: { Type: 'ExecutionResult', ExecutionResult: { Value: value } }
+    };
+  }
+
   return {
-    type: 'override_resources',
-    parameters: {
-      resource_type: overrideAction.resource_type,
-      resource_id: overrideAction.resource_id
-    }
+    Identifier: id,
+    Type: 'OverrideSystemBehavior',
+    Parameters: {
+      ActionType: 'OverrideSystemBehavior',
+      Behavior: { Type: 'FlowAction', Properties: props }
+    },
+    Transitions: {}
   };
 }
 

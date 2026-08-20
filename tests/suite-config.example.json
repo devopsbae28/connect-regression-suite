@@ -1,6 +1,6 @@
 {
   "_comment": "TEMPLATE ONLY. Copy to tests/<env>-suite-config.json and replace all <PLACEHOLDERS>. Never commit a file containing real IDs/ARNs. See SPEC.md sections 4A (Validation Strategy), 8 and 9.",
-  "_validation_note": "Expected prompt text is customer-specific and brittle. Prefer validating on routing EVENTS (action_triggered) and ATTRIBUTES (check) over prompt wording. Prompt-text observations are OPTIONAL; when used, default match=Similarity. See SPEC.md section 4A.",
+  "_validation_note": "Expected prompt text is customer-specific and brittle. Prefer validating on routing EVENTS (action_triggered) and ATTRIBUTES (check) over prompt wording. Prompt-text observations are OPTIONAL; when used, 'match' is Similarity (semantic, recommended) or Inclusion (substring). The tool maps 'match' to the raw Testing Language form Properties.MatchingCriteria = { \"Type\": \"Similarity\" | \"Inclusion\" } (object, INSIDE Properties). Do not use 'Contains' (console-only label). See SPEC.md sections 4.3 and 4A.",
 
   "environment": "test",
   "instanceId": "<INSTANCE_ID>",
