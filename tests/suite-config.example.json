@@ -1,0 +1,160 @@
+{
+  "_comment": "TEMPLATE ONLY. Copy to tests/<env>-suite-config.json and replace all <PLACEHOLDERS>. Never commit a file containing real IDs/ARNs. See SPEC.md sections 8 and 9.",
+
+  "environment": "test",
+  "instanceId": "<INSTANCE_ID>",
+  "instanceAlias": "<INSTANCE_ALIAS>",
+  "region": "<REGION>",
+  "allowedInstanceIds": ["<INSTANCE_ID>"],
+
+  "safety": {
+    "_comment": "Live-agent and side-effect protections. Keep blockQueueTransfers=true unless you have a deliberate reason. See SPEC.md section 7.",
+    "blockQueueTransfers": true,
+    "requireLambdaMock": true,
+    "testQueueArn": "<TEST_QUEUE_ARN_NO_AGENTS>"
+  },
+
+  "resources": {
+    "_comment": "Reusable resource references. Create one always-open and one always-closed hours-of-operation for business-hours/after-hours simulation.",
+    "hoursOfOperation": {
+      "alwaysOpen": "<HOO_ID_OPEN>",
+      "alwaysClosed": "<HOO_ID_CLOSED>"
+    }
+  },
+
+  "testCases": [
+    {
+      "_comment": "Example 1 — Voice DTMF path with a mocked Lambda so the real function is never invoked. Ends before any queue transfer.",
+      "name": "menu-option-1-<destination>",
+      "description": "DTMF 1 routes to <destination> and plays the expected prompt",
+      "flowId": "<FLOW_ID>",
+      "channel": "VOICE_CALL",
+      "overrides": [
+        {
+          "type": "lambda",
+          "lambdaArn": "<LAMBDA_ARN>",
+          "mockValue": { "ExampleKey": "ExampleValue" }
+        },
+        {
+          "type": "hoursOfOperation",
+          "mock": "InHours"
+        }
+      ],
+      "interactionGroups": [
+        {
+          "id": "start",
+          "observe": { "type": "test_started" }
+        },
+        {
+          "id": "menu",
+          "observe": {
+            "type": "message_received",
+            "content": "<MENU_PROMPT_TEXT>",
+            "match": "Similarity"
+          },
+          "action": { "type": "send_dtmf", "value": 1 }
+        },
+        {
+          "id": "destination",
+          "observe": {
+            "type": "message_received",
+            "content": "<DESTINATION_PROMPT_TEXT>",
+            "match": "Similarity"
+          },
+          "action": { "type": "end_test" }
+        }
+      ]
+    },
+    {
+      "_comment": "Example 2 — After-hours branch via hours-of-operation mock (OutOfHours). Ends on the closed message.",
+      "name": "after-hours-closed-message",
+      "description": "Validates the closed message plays when outside business hours",
+      "flowId": "<FLOW_ID>",
+      "channel": "VOICE_CALL",
+      "overrides": [
+        { "type": "hoursOfOperation", "mock": "OutOfHours" }
+      ],
+      "interactionGroups": [
+        {
+          "id": "start",
+          "observe": { "type": "test_started" }
+        },
+        {
+          "id": "closed_message",
+          "observe": {
+            "type": "message_received",
+            "content": "<CLOSED_PROMPT_TEXT>",
+            "match": "Similarity"
+          },
+          "action": { "type": "end_test" }
+        }
+      ]
+    },
+    {
+      "_comment": "Example 3 — Chat greeting validation. Simple single-message observation.",
+      "name": "chat-greeting",
+      "description": "Validates the chat contact flow greeting",
+      "flowId": "<FLOW_ID>",
+      "channel": "CHAT",
+      "interactionGroups": [
+        {
+          "id": "start",
+          "observe": { "type": "test_started" }
+        },
+        {
+          "id": "greeting",
+          "observe": {
+            "type": "message_received",
+            "content": "<CHAT_GREETING_TEXT>",
+            "match": "Similarity"
+          },
+          "action": { "type": "end_test" }
+        }
+      ]
+    },
+    {
+      "_comment": "Example 4 — Queue-routing validation done SAFELY. Observe the transfer action and end immediately; optionally substitute an agent-free test queue. Never observe events after the contact is enqueued. See SPEC.md section 7.",
+      "name": "menu-option-2-queue-routing",
+      "description": "DTMF 2 triggers a queue transfer to the expected queue (ends before reaching an agent)",
+      "flowId": "<FLOW_ID>",
+      "channel": "VOICE_CALL",
+      "overrides": [
+        {
+          "type": "queue",
+          "substituteArn": "<TEST_QUEUE_ARN_NO_AGENTS>"
+        }
+      ],
+      "interactionGroups": [
+        {
+          "id": "start",
+          "observe": { "type": "test_started" }
+        },
+        {
+          "id": "menu",
+          "observe": {
+            "type": "message_received",
+            "content": "<MENU_PROMPT_TEXT>",
+            "match": "Similarity"
+          },
+          "action": { "type": "send_dtmf", "value": 2 }
+        },
+        {
+          "id": "queue_transfer",
+          "observe": {
+            "type": "action_triggered",
+            "actionType": "TransferContactToQueue"
+          },
+          "check": [
+            {
+              "type": "system",
+              "namespace": "$.Queue.Name",
+              "operator": "Equals",
+              "operand": "<EXPECTED_QUEUE_NAME>"
+            }
+          ],
+          "action": { "type": "end_test" }
+        }
+      ]
+    }
+  ]
+}

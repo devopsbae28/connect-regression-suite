@@ -1,0 +1,268 @@
+{
+  "instanceId": "YOUR_CONNECT_INSTANCE_ID",
+  "description": "Contact Flow Regression Test Suite",
+  "testCases": [
+    {
+      "name": "main-ivr-welcome-prompt",
+      "description": "Validates that the main IVR flow plays the welcome prompt on call initiation",
+      "flowId": "FLOW_ID_FOR_MAIN_IVR",
+      "channel": "VOICE_CALL",
+      "sourcePhoneNumber": "+14045551234",
+      "destinationPhoneNumber": "+14045559876",
+      "interactionGroups": [
+        {
+          "id": "test_start",
+          "observe": {
+            "type": "test_started"
+          },
+          "actions": [
+            {
+              "type": "end_test"
+            }
+          ]
+        },
+        {
+          "id": "welcome_prompt",
+          "observe": {
+            "type": "message_received",
+            "content": "Thank you for calling",
+            "match_type": "Contains"
+          }
+        }
+      ]
+    },
+    {
+      "name": "main-ivr-dtmf-menu-option-1",
+      "description": "Validates DTMF option 1 routes to Water Services queue",
+      "flowId": "FLOW_ID_FOR_MAIN_IVR",
+      "channel": "VOICE_CALL",
+      "sourcePhoneNumber": "+14045551234",
+      "destinationPhoneNumber": "+14045559876",
+      "interactionGroups": [
+        {
+          "id": "test_start",
+          "observe": {
+            "type": "test_started"
+          }
+        },
+        {
+          "id": "welcome_prompt",
+          "observe": {
+            "type": "message_received",
+            "content": "Thank you for calling",
+            "match_type": "Contains"
+          },
+          "actions": [
+            {
+              "type": "send_dtmf",
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "id": "water_services_transfer",
+          "observe": {
+            "type": "action_triggered",
+            "action_type": "TransferToQueue"
+          },
+          "check": [
+            {
+              "type": "system",
+              "key": "Queue.Name",
+              "expectedValue": "Water Services",
+              "operator": "Equals"
+            }
+          ],
+          "actions": [
+            {
+              "type": "end_test"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "main-ivr-dtmf-menu-option-2",
+      "description": "Validates DTMF option 2 routes to Billing queue",
+      "flowId": "FLOW_ID_FOR_MAIN_IVR",
+      "channel": "VOICE_CALL",
+      "sourcePhoneNumber": "+14045551234",
+      "destinationPhoneNumber": "+14045559876",
+      "interactionGroups": [
+        {
+          "id": "test_start",
+          "observe": {
+            "type": "test_started"
+          }
+        },
+        {
+          "id": "welcome_prompt",
+          "observe": {
+            "type": "message_received",
+            "content": "Thank you for calling",
+            "match_type": "Contains"
+          },
+          "actions": [
+            {
+              "type": "send_dtmf",
+              "value": "2"
+            }
+          ]
+        },
+        {
+          "id": "billing_transfer",
+          "observe": {
+            "type": "action_triggered",
+            "action_type": "TransferToQueue"
+          },
+          "check": [
+            {
+              "type": "system",
+              "key": "Queue.Name",
+              "expectedValue": "Billing",
+              "operator": "Equals"
+            }
+          ],
+          "actions": [
+            {
+              "type": "end_test"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "after-hours-message",
+      "description": "Validates after-hours message is played when calling outside business hours",
+      "flowId": "FLOW_ID_FOR_MAIN_IVR",
+      "channel": "VOICE_CALL",
+      "sourcePhoneNumber": "+14045551234",
+      "destinationPhoneNumber": "+14045559876",
+      "interactionGroups": [
+        {
+          "id": "test_start",
+          "observe": {
+            "type": "test_started"
+          }
+        },
+        {
+          "id": "after_hours_prompt",
+          "observe": {
+            "type": "message_received",
+            "content": "Our offices are currently closed",
+            "match_type": "Contains"
+          },
+          "actions": [
+            {
+              "type": "end_test"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "chat-greeting-flow",
+      "description": "Validates the chat contact flow greeting message",
+      "flowId": "FLOW_ID_FOR_CHAT",
+      "channel": "CHAT",
+      "interactionGroups": [
+        {
+          "id": "test_start",
+          "observe": {
+            "type": "test_started"
+          }
+        },
+        {
+          "id": "chat_greeting",
+          "observe": {
+            "type": "message_received",
+            "content": "Welcome to online services",
+            "match_type": "Contains"
+          },
+          "actions": [
+            {
+              "type": "send_text",
+              "value": "I need help with my water bill"
+            }
+          ]
+        },
+        {
+          "id": "lex_bot_response",
+          "observe": {
+            "type": "message_received",
+            "content": "I can help you with your water bill",
+            "match_type": "Similarity"
+          },
+          "actions": [
+            {
+              "type": "end_test"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "lambda-lookup-flow",
+      "description": "Validates the Lambda function invocation for customer lookup sets attributes correctly",
+      "flowId": "FLOW_ID_FOR_CUSTOMER_LOOKUP",
+      "channel": "VOICE_CALL",
+      "sourcePhoneNumber": "+14045551234",
+      "destinationPhoneNumber": "+14045559876",
+      "interactionGroups": [
+        {
+          "id": "test_start",
+          "observe": {
+            "type": "test_started"
+          },
+          "actions": [
+            {
+              "type": "override_resources",
+              "resource_type": "Lambda",
+              "resource_id": "arn:aws:lambda:us-east-1:123456789012:function:test-customer-lookup"
+            }
+          ]
+        },
+        {
+          "id": "lambda_invoked",
+          "observe": {
+            "type": "action_triggered",
+            "action_type": "InvokeLambdaFunction"
+          },
+          "check": [
+            {
+              "type": "user_defined",
+              "key": "customerFound",
+              "expectedValue": "true",
+              "operator": "Equals"
+            }
+          ],
+          "actions": [
+            {
+              "type": "end_test"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "hoursOfOperation": [
+    {
+      "name": "After Hours - Closed",
+      "description": "Overrides hours to simulate calling when offices are closed",
+      "hoursOfOperationId": "HOURS_ID_FOR_CLOSED_SCHEDULE",
+      "applyTo": ["after-hours-message"]
+    },
+    {
+      "name": "Business Hours - Open",
+      "description": "Overrides hours to simulate calling during business hours",
+      "hoursOfOperationId": "HOURS_ID_FOR_OPEN_SCHEDULE",
+      "applyTo": [
+        "main-ivr-welcome-prompt",
+        "main-ivr-dtmf-menu-option-1",
+        "main-ivr-dtmf-menu-option-2",
+        "chat-greeting-flow",
+        "lambda-lookup-flow"
+      ]
+    }
+  ]
+}
