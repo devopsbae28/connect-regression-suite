@@ -1,5 +1,6 @@
 {
-  "_comment": "TEMPLATE ONLY. Copy to tests/<env>-suite-config.json and replace all <PLACEHOLDERS>. Never commit a file containing real IDs/ARNs. See SPEC.md sections 8 and 9.",
+  "_comment": "TEMPLATE ONLY. Copy to tests/<env>-suite-config.json and replace all <PLACEHOLDERS>. Never commit a file containing real IDs/ARNs. See SPEC.md sections 4A (Validation Strategy), 8 and 9.",
+  "_validation_note": "Expected prompt text is customer-specific and brittle. Prefer validating on routing EVENTS (action_triggered) and ATTRIBUTES (check) over prompt wording. Prompt-text observations are OPTIONAL; when used, default match=Similarity. See SPEC.md section 4A.",
 
   "environment": "test",
   "instanceId": "<INSTANCE_ID>",
@@ -24,133 +25,101 @@
 
   "testCases": [
     {
-      "_comment": "Example 1 — Voice DTMF path with a mocked Lambda so the real function is never invoked. Ends before any queue transfer.",
-      "name": "menu-option-1-<destination>",
-      "description": "DTMF 1 routes to <destination> and plays the expected prompt",
+      "_comment": "Example 1 (RECOMMENDED PATTERN) — Validate a DTMF path by the routing EVENT + target, not prompt text. Portable across any contact center. Lambda mocked so the real function is never invoked. Ends before reaching an agent.",
+      "name": "menu-option-<n>-routes-to-<destination>",
+      "description": "Pressing <n> routes the caller to <destination> (validated by event + attribute)",
       "flowId": "<FLOW_ID>",
       "channel": "VOICE_CALL",
       "overrides": [
-        {
-          "type": "lambda",
-          "lambdaArn": "<LAMBDA_ARN>",
-          "mockValue": { "ExampleKey": "ExampleValue" }
-        },
-        {
-          "type": "hoursOfOperation",
-          "mock": "InHours"
-        }
+        { "type": "lambda", "lambdaArn": "<LAMBDA_ARN>", "mockValue": { "ExampleKey": "ExampleValue" } }
       ],
       "interactionGroups": [
+        { "id": "start", "observe": { "type": "test_started" }, "action": { "type": "send_dtmf", "value": 1 } },
         {
-          "id": "start",
-          "observe": { "type": "test_started" }
-        },
-        {
-          "id": "menu",
-          "observe": {
-            "type": "message_received",
-            "content": "<MENU_PROMPT_TEXT>",
-            "match": "Similarity"
-          },
-          "action": { "type": "send_dtmf", "value": 1 }
-        },
-        {
-          "id": "destination",
-          "observe": {
-            "type": "message_received",
-            "content": "<DESTINATION_PROMPT_TEXT>",
-            "match": "Similarity"
-          },
+          "id": "routed",
+          "observe": { "type": "action_triggered", "actionType": "TransferContactToQueue" },
+          "check": [
+            { "type": "system", "namespace": "$.Queue.Name", "operator": "Equals", "operand": "<EXPECTED_QUEUE_NAME>" }
+          ],
           "action": { "type": "end_test" }
         }
       ]
     },
     {
-      "_comment": "Example 2 — After-hours branch via hours-of-operation mock (OutOfHours). Ends on the closed message.",
-      "name": "after-hours-closed-message",
-      "description": "Validates the closed message plays when outside business hours",
+      "_comment": "Example 2 — Validate a Lambda-integration path by the InvokeLambdaFunction EVENT and a resulting attribute. No prompt text asserted. Lambda mocked.",
+      "name": "menu-option-<n>-lambda-lookup",
+      "description": "Pressing <n> invokes the data-dip Lambda and sets the expected attribute",
+      "flowId": "<FLOW_ID>",
+      "channel": "VOICE_CALL",
+      "overrides": [
+        { "type": "lambda", "lambdaArn": "<LAMBDA_ARN>", "mockValue": { "State": "ExampleState" } }
+      ],
+      "interactionGroups": [
+        { "id": "start", "observe": { "type": "test_started" }, "action": { "type": "send_dtmf", "value": 3 } },
+        {
+          "id": "lambda_invoked",
+          "observe": { "type": "action_triggered", "actionType": "InvokeLambdaFunction" },
+          "check": [
+            { "type": "external", "namespace": "$.External.State", "operator": "Equals", "operand": "ExampleState" }
+          ],
+          "action": { "type": "end_test" }
+        }
+      ]
+    },
+    {
+      "_comment": "Example 3 — After-hours branch validated by the CheckHoursOfOperation EVENT (hours mocked to OutOfHours). Optional prompt observation shown but commented as customer-specific.",
+      "name": "after-hours-routing",
+      "description": "Outside business hours, the flow takes the closed branch",
       "flowId": "<FLOW_ID>",
       "channel": "VOICE_CALL",
       "overrides": [
         { "type": "hoursOfOperation", "mock": "OutOfHours" }
       ],
       "interactionGroups": [
+        { "id": "start", "observe": { "type": "test_started" } },
         {
-          "id": "start",
-          "observe": { "type": "test_started" }
-        },
-        {
-          "id": "closed_message",
-          "observe": {
-            "type": "message_received",
-            "content": "<CLOSED_PROMPT_TEXT>",
-            "match": "Similarity"
-          },
+          "id": "hours_checked",
+          "observe": { "type": "action_triggered", "actionType": "CheckHoursOfOperation" },
           "action": { "type": "end_test" }
         }
       ]
     },
     {
-      "_comment": "Example 3 — Chat greeting validation. Simple single-message observation.",
-      "name": "chat-greeting",
-      "description": "Validates the chat contact flow greeting",
+      "_comment": "Example 4 (OPTIONAL prompt-text validation) — Only if the customer explicitly wants to assert wording. Prompt text is customer-supplied and match defaults to Similarity (tolerant). Prefer the event-based patterns above where possible.",
+      "name": "greeting-wording-check",
+      "description": "Validates the greeting wording (customer-provided expected text)",
       "flowId": "<FLOW_ID>",
       "channel": "CHAT",
       "interactionGroups": [
-        {
-          "id": "start",
-          "observe": { "type": "test_started" }
-        },
+        { "id": "start", "observe": { "type": "test_started" } },
         {
           "id": "greeting",
           "observe": {
             "type": "message_received",
-            "content": "<CHAT_GREETING_TEXT>",
-            "match": "Similarity"
+            "content": "<CUSTOMER_PROVIDED_EXPECTED_GREETING>",
+            "match": "Similarity",
+            "optional": true
           },
           "action": { "type": "end_test" }
         }
       ]
     },
     {
-      "_comment": "Example 4 — Queue-routing validation done SAFELY. Observe the transfer action and end immediately; optionally substitute an agent-free test queue. Never observe events after the contact is enqueued. See SPEC.md section 7.",
-      "name": "menu-option-2-queue-routing",
-      "description": "DTMF 2 triggers a queue transfer to the expected queue (ends before reaching an agent)",
+      "_comment": "Example 5 — Queue routing validated SAFELY: observe the transfer event, assert the queue, end immediately. Optionally substitute an agent-free test queue. Never observe events after the contact is enqueued. See SPEC.md section 7.",
+      "name": "menu-option-<n>-queue-routing",
+      "description": "Pressing <n> transfers to the expected queue (ends before reaching an agent)",
       "flowId": "<FLOW_ID>",
       "channel": "VOICE_CALL",
       "overrides": [
-        {
-          "type": "queue",
-          "substituteArn": "<TEST_QUEUE_ARN_NO_AGENTS>"
-        }
+        { "type": "queue", "substituteArn": "<TEST_QUEUE_ARN_NO_AGENTS>" }
       ],
       "interactionGroups": [
-        {
-          "id": "start",
-          "observe": { "type": "test_started" }
-        },
-        {
-          "id": "menu",
-          "observe": {
-            "type": "message_received",
-            "content": "<MENU_PROMPT_TEXT>",
-            "match": "Similarity"
-          },
-          "action": { "type": "send_dtmf", "value": 2 }
-        },
+        { "id": "start", "observe": { "type": "test_started" }, "action": { "type": "send_dtmf", "value": 2 } },
         {
           "id": "queue_transfer",
-          "observe": {
-            "type": "action_triggered",
-            "actionType": "TransferContactToQueue"
-          },
+          "observe": { "type": "action_triggered", "actionType": "TransferContactToQueue" },
           "check": [
-            {
-              "type": "system",
-              "namespace": "$.Queue.Name",
-              "operator": "Equals",
-              "operand": "<EXPECTED_QUEUE_NAME>"
-            }
+            { "type": "system", "namespace": "$.Queue.Name", "operator": "Equals", "operand": "<EXPECTED_QUEUE_NAME>" }
           ],
           "action": { "type": "end_test" }
         }
