@@ -60,7 +60,9 @@ open reports/latest-report.html
 
 ## Configuration Schema
 
-The test suite is configured via a JSON file. See `tests/suite-config.json` for a complete example.
+The test suite is configured via a JSON file. See `tests/suite-config.example.json` for a complete, placeholder-based example.
+
+> **Validation strategy:** Every contact center is different, and prompt/greeting wording changes often. Expected prompt text is **customer-supplied input**, never assumed by the suite. Prefer validating on stable **routing events** (`action_triggered`, e.g. queue transfer, Lambda invocation, hours check) and **attributes** (`check`) over prompt-text matching. Prompt-text observations are **optional**; when used, default to `Similarity` matching (voice audio is segmented, so exact `Contains` matches on voice are unreliable). See `SPEC.md` §4A.
 
 ### Top-Level Structure
 

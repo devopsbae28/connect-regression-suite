@@ -204,6 +204,50 @@ NumberGreaterThan, NumberGreaterOrEqualTo, NumberLessThan, NumberLessOrEqualTo, 
 
 ---
 
+## 4A. Validation Strategy (IMPORTANT — read before authoring tests)
+
+Every contact center is different. The prompt/greeting wording a flow plays is
+**customer-specific** and changes frequently (copy edits, localization, seasonal
+messaging). Therefore:
+
+1. **Expected prompt text is always caller-supplied input, never assumed by the suite.**
+   The suite validates against the expectation the test author declares in config. A
+   mismatch is a legitimate *test result* (the experience differs from what was declared),
+   not a suite defect. Do NOT hardcode prompt wording into the tooling; it lives only in
+   per-customer config.
+
+2. **Prefer contact-center-agnostic validation over prompt-text matching.** Assert on
+   stable, structural signals wherever possible. Recommended order of preference:
+
+   | Validation                         | Stability | Example |
+   |------------------------------------|-----------|---------|
+   | `action_triggered` (flow action)   | Highest — structural | `TransferContactToQueue`, `InvokeLambdaFunction`, `CheckHoursOfOperation`, Lex bot connect |
+   | `check` / `Assert` on attributes    | High — data | `$.Queue.Name Equals "Sales"`, `$.Attributes.verified Equals "true"` |
+   | `MessageReceived` + `Similarity`    | Medium — semantic | tolerant of minor wording changes |
+   | `MessageReceived` + `Contains`      | Low — exact substring | brittle; breaks on any copy change |
+
+   For "did the caller reach the right place," assert on the **routing event + target
+   resource** (e.g., queue transfer + `$.Queue.Name`) rather than the prompt text. This is
+   portable across any contact center.
+
+3. **Prompt observation is OPTIONAL.** A test may validate a DTMF/utterance path purely by
+   the destination *action* (e.g., "pressing 3 triggers the Lambda block", "pressing 1
+   transfers to the Sales queue") with no prompt-text observation at all.
+
+4. **When you do observe a message, default to `Similarity`, not `Contains`.** Reserve
+   `Contains` for cases where an exact, stable substring is genuinely required.
+
+5. **Voice caveat.** Voice audio is segmented by the simulator based on pauses/speech
+   patterns, so exact-text matching on voice prompts is especially unreliable. Favor
+   event/attribute assertions for voice; use `Similarity` if a message check is required.
+
+Loader guidance: a test with zero observations beyond `test_started` and no
+event/attribute assertion is not meaningfully validating anything — warn on it. A test that
+asserts only on prompt `Contains` for voice should emit an advisory to consider event-based
+validation.
+
+---
+
 ## 5. Execution Record Anatomy (for the report)
 
 `ListTestCaseExecutionRecords` returns ordered records; `Record` is a JSON string:
