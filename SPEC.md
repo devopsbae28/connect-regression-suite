@@ -501,6 +501,14 @@ Generate a self-contained HTML report (no external assets) containing:
 - Per-test expandable cards: description, test case ID, observation pass/fail counts,
   step table (Initiation → Execution Start → each Observation → Completion), and an explicit
   **failure-location** box citing the failing step + `CompletionReason`.
+- **Prompt display:** for each `MessageReceived` step, render the observed prompt text
+  (from `Event.Properties.Text`, falling back to `SSML`) so reviewers can read exactly what
+  each step validated. Non-message steps (`TestInitiated`, `Completion`, etc.) show a
+  "no prompt for this step" note. For `SendInstruction` actions, annotate the DTMF/utterance
+  sent (e.g., "↳ Action: sent DTMF 1").
+- **Prompt boxes are scrollable:** render each prompt in a monospace box with a fixed
+  `max-height` (~120px) and `overflow-y: auto`, so long menu prompts scroll instead of
+  blowing out the card layout.
 - Failed tests expanded by default.
 - HTML-escape all record content (records may contain PII — see Section 12).
 - Write timestamped file + `latest-report.html`. Output dir gitignored.
