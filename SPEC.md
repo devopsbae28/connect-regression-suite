@@ -312,6 +312,46 @@ agent-free test queue. Example (force after-hours):
 }
 ```
 
+### 6.2.1 CheckHoursOfOperation override — VERIFIED GOTCHAS (read before authoring after-hours tests)
+
+An after-hours test that PUBLISHES successfully can still **hang until the 5-minute
+`OBSERVE_EVENT` timeout** if the override does not actually flip the flow's hours branch.
+Two distinct, compounding causes were confirmed in practice — both must be handled:
+
+**(A) The override's `HoursOfOperationId` MUST match the ID the flow's block resolves to at runtime.**
+- A `CheckHoursOfOperation` flow block with **empty `Parameters: {}`** does NOT check a
+  fixed HoO. It resolves to the **working/target queue's associated hours** — i.e., whatever
+  queue was set (`UpdateContactTargetQueue` / `SetWorkingQueue`) immediately before the check.
+- The `OverrideSystemBehavior` action only intercepts the flow's check when its
+  `ActionParameters.HoursOfOperationId` equals the **actual resolved hours ID**. If you key
+  the override on some arbitrary "always-closed" resource ID that the flow never references,
+  the override silently no-ops, the real check runs, and the branch is not forced.
+- **How to find the resolved ID:** inspect the flow, find the queue set before the
+  `CheckHoursOfOperation` block (`DescribeContactFlow`), then `DescribeQueue` and read its
+  `HoursOfOperationId`. Key the override on THAT ARN. Substitute your always-closed HoO for it.
+- If the block DOES specify an explicit `HoursOfOperationId`, key the override on that instead.
+
+**(B) The substitute resource must GENUINELY evaluate closed (resp. open) at run time.**
+- **`StartTime == EndTime` (e.g. `00:00–00:00`) means OPEN 24 HOURS in Amazon Connect, not
+  closed.** A "Basic Hours" resource with every day set to `00:00–00:00` is always open — a
+  common trap. Substituting it will never produce the closed branch.
+- A resource is only "always closed" if it has NO open window covering the execution moment.
+  Connect requires at least one day entry in `Config`, so a truly-safe always-closed resource
+  uses a single minimal window on one day (e.g. `SATURDAY 00:00–00:01`); it is effectively
+  closed at every other time. Beware a substitute whose lone window happens to overlap the
+  run time (e.g. `SUNDAY 03:00–03:01` executed on a Sunday at 03:00).
+- **Recommendation:** pre-create two dedicated, clearly-named regression resources —
+  `RegressionTest-AlwaysClosed` (single 1-minute window) and `RegressionTest-AlwaysOpen`
+  (a day set `00:00–00:00`, i.e. 24h) — and reference them from config
+  (`resources.hoursOfOperation.alwaysClosed` / `.alwaysOpen`). Do not reuse the flow's real
+  hours resource as the substitute (that's a no-op and was the original bug).
+
+**Symptom → cause quick reference:**
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Test PUBLISHES, init/override observation PASSES, then hangs to TIMEOUT on the closed-message observation | Override keyed on wrong HoO ID (flow uses queue's hours) OR substitute resource is actually open (`00:00–00:00`) | Key override on the queue's resolved `HoursOfOperationId`; substitute a genuinely always-closed HoO |
+| Publish rejected with `InvalidTestCaseException` | Used `MockResponse` for `CheckHoursOfOperation` | Use `SubstituteResource` (§6.1 note) |
+
 **Requirement:** Any test whose target flow invokes an external resource with side effects
 (Lambda, external HTTP via Lambda, payment, DB writes) MUST mock that resource with
 `MockResponse` (Lambda) or substitute a sandbox resource (`SubstituteResource`, incl. hours).
@@ -466,6 +506,12 @@ Behavior matrix:
 - Live-agent rule (Section 7): reject any post-queue observation lacking a prior `end_test`.
 - If `safety.requireLambdaMock` and a test lacks a lambda override but is flagged as touching
   a Lambda → hard error (or WARN if flow introspection is unavailable).
+- **HoO override sanity (WARN, best-effort):** for any `hoursOfOperation` override, if flow
+  introspection is available, resolve the flow's `CheckHoursOfOperation` target (explicit
+  `HoursOfOperationId`, else the working queue's `HoursOfOperationId`) and warn if the
+  override's target ID does not match it — the override would silently no-op (see §6.2.1(A)).
+  Additionally warn if a configured always-closed substitute has any day with
+  `StartTime == EndTime` (that means open 24h — see §6.2.1(B)).
 - No raw resource ID/ARN may appear outside the config file (lint check in CI).
 
 ---
