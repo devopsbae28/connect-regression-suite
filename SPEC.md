@@ -290,6 +290,68 @@ Lambda (Value MUST be a JSON string):
   "Response": { "Type": "ExecutionResult",
     "ExecutionResult": { "Value": "{\"Key\":\"Val\"}" } } }
 ```
+
+### 6.1.1 MANDATORY Lambda-mocking policy
+
+**Every `InvokeLambdaFunction` block in every tested flow MUST be mocked via
+`OverrideSystemBehavior` + `MockResponse`. Real Lambda functions MUST NOT execute during
+regression tests.** Mocking intercepts the invoke, so the actual function never runs and no
+side effects occur (DB writes, payments, CRM updates, external HTTP). This is a hard rule,
+not a preference.
+
+Key facts about Connect Lambda responses (do not confuse with HTTP):
+- A Connect Lambda integration does **not** return an HTTP status code to the flow. It returns
+  a **flat JSON object of string key/value pairs** that the flow reads as `$.External.<key>`.
+- "Success" vs "error" to the flow is whether the **invoke succeeded** (→ the block's Success
+  branch) or errored/timed out (→ Error branch). A MockResponse `ExecutionResult` makes the
+  invoke succeed and supplies the returned attributes.
+- `ExecutionResult.Value` MUST be a **JSON-serialized string** (e.g.
+  `"{\"customerFound\":\"true\",\"statusCode\":\"200\"}"`), never a raw object. Passing an
+  object fails with `InvalidTestCaseException` / internal `ClassCastException`. (See §4.5.)
+
+**The mock payload must match what each flow actually reads from `$.External`.** A generic
+`{"statusCode":"200"}` is NOT sufficient if a flow branches on, e.g., `$.External.customerFound`
+or `$.External.accountTier` — those attributes must be present in the mock or the flow will
+take the wrong branch (or hit an unset-attribute path) and the test will misbehave or time out.
+
+#### Per-Lambda success payloads (REQUIRED approach)
+Configure a success payload **per Lambda ARN**, keyed in the gitignored per-environment config.
+Provide a `defaultLambdaMock` fallback for any Lambda not explicitly listed. Example config
+(placeholders — real values live only in the gitignored config, per §9/§12):
+```json
+"lambdaMocks": {
+  "<CRM_LOOKUP_LAMBDA_ARN>":   { "customerFound": "true", "accountTier": "gold", "statusCode": "200" },
+  "<PAYMENT_CHECK_LAMBDA_ARN>":{ "balanceDue": "0", "status": "current", "statusCode": "200" }
+},
+"defaultLambdaMock": { "statusCode": "200", "status": "success" }
+```
+Each value is serialized to the required JSON string at build time.
+
+#### DISCOVER the required keys from the live flows (do this first)
+Before authoring the mocks, determine exactly which `$.External.*` attributes each flow reads
+after each Lambda invoke, so the success payload exercises the correct branches:
+1. For each flow under test: `DescribeContactFlow` and locate every `InvokeLambdaFunction`
+   action; record its `LambdaFunctionARN`.
+2. In that flow's JSON, find every downstream reference of the form `$.External.<key>`
+   (in `Compare`, `CheckAttribute`, `GetParticipantInput`, message text, `Set*` blocks, etc.).
+   Those `<key>` names are exactly what that Lambda's mock payload must return.
+3. Build the per-Lambda payload from those keys, choosing the values that drive the
+   "success / happy-path" branch (and add extra test cases with alternate values to exercise
+   other branches — e.g. `customerFound: "false"`).
+4. If a flow reads no `$.External` attributes (fire-and-forget Lambda), the `defaultLambdaMock`
+   (`{"statusCode":"200","status":"success"}`) is sufficient — the point is only that the
+   invoke succeeds.
+
+#### Builder + loader requirements
+- The test-case builder MUST auto-inject an `OverrideSystemBehavior`/`MockResponse` for the
+  Lambda ARN into the first observation (`TestInitiated`) using the per-ARN payload (or
+  `defaultLambdaMock`), so mocks apply before the flow runs — the same injection pattern used
+  for hours overrides (§6.2 / builder).
+- The config loader MUST enforce `safety.requireLambdaMock: true`: if flow introspection shows
+  a tested flow contains an `InvokeLambdaFunction` block with no corresponding entry in
+  `lambdaMocks` and no `defaultLambdaMock`, fail closed (hard error). If introspection is
+  unavailable, emit a WARN. This guarantees no real Lambda ever executes unmocked.
+
 > **CheckHoursOfOperation does NOT support MockResponse (VERIFIED).** Every MockResponse
 > variant for `CheckHoursOfOperation` (`Value: "InHours"|"OutOfHours"`, JSON-string, Branch,
 > etc.) is rejected at publish with `InvalidTestCaseException`. To force open/closed, use
@@ -462,6 +524,11 @@ Behavior matrix:
   "resources": {
     "hoursOfOperation": { "alwaysOpen": "<HOO_ID_OPEN>", "alwaysClosed": "<HOO_ID_CLOSED>" }
   },
+  "lambdaMocks": {
+    "<LAMBDA_ARN_1>": { "customerFound": "true", "accountTier": "gold", "statusCode": "200" },
+    "<LAMBDA_ARN_2>": { "balanceDue": "0", "status": "current", "statusCode": "200" }
+  },
+  "defaultLambdaMock": { "statusCode": "200", "status": "success" },
   "testCases": [
     {
       "name": "menu-option-1-<destination>",
@@ -495,6 +562,7 @@ Behavior matrix:
 | `<REGION>`                     | AWS region of the instance                                 |
 | `<FLOW_ID>`                    | Contact flow UUID under test                               |
 | `<LAMBDA_ARN>`                 | ARN of a Lambda the flow invokes (to be mocked)            |
+| `<LAMBDA_ARN_1>` / `<LAMBDA_ARN_2>` | Lambda ARNs mapped to per-Lambda success payloads in `lambdaMocks` (§6.1.1) |
 | `<HOO_ID_OPEN>` / `<HOO_ID_CLOSED>` | Hours-of-operation IDs for open/closed simulation      |
 | `<TEST_QUEUE_ARN_NO_AGENTS>`   | Dedicated agent-free queue for safe substitution           |
 | `<MENU_PROMPT_TEXT>` / `<DESTINATION_PROMPT_TEXT>` | Expected prompt text to observe         |
@@ -504,8 +572,11 @@ Behavior matrix:
 - Each test: `name`, `flowId`, `channel` ∈ {VOICE_CALL, CHAT}, non-empty `interactionGroups`.
 - First interaction group MUST observe `test_started`.
 - Live-agent rule (Section 7): reject any post-queue observation lacking a prior `end_test`.
-- If `safety.requireLambdaMock` and a test lacks a lambda override but is flagged as touching
-  a Lambda → hard error (or WARN if flow introspection is unavailable).
+- **Lambda mock enforcement (`safety.requireLambdaMock: true`, per §6.1.1):** every
+  `InvokeLambdaFunction` block in a tested flow MUST resolve to a mock — either a matching
+  `lambdaMocks[<ARN>]` entry or `defaultLambdaMock`. If flow introspection shows an
+  `InvokeLambdaFunction` block with no matching mock and no `defaultLambdaMock` → fail closed
+  (hard error). If introspection is unavailable → WARN. Real Lambdas MUST NOT execute unmocked.
 - **HoO override sanity (WARN, best-effort):** for any `hoursOfOperation` override, if flow
   introspection is available, resolve the flow's `CheckHoursOfOperation` target (explicit
   `HoursOfOperationId`, else the working queue's `HoursOfOperationId`) and warn if the
