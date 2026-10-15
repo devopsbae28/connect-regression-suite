@@ -9,6 +9,7 @@
   "scripts": {
     "test": "node src/index.js",
     "test:dry-run": "node src/index.js --dry-run",
+    "test:execute": "node src/index.js --execute",
     "report": "open reports/latest-report.html"
   },
   "keywords": [
@@ -21,7 +22,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@aws-sdk/client-connect": "3.705.0"
+    "@aws-sdk/client-connect": "3.1151.0"
   },
   "engines": {
     "node": ">=18.0.0"

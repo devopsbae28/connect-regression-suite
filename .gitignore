@@ -8,4 +8,7 @@ reports/
 # The placeholder template (suite-config.example.json) IS committed.
 tests/live-*.json
 tests/*-suite-config.json
+tests/*-config.json
+tests/_*.json
 !tests/suite-config.example.json
+!tests/suite-config.json

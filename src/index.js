@@ -27,7 +27,7 @@ function parseArgs() {
   const options = {
     config: './tests/suite-config.json',
     region: 'us-east-1',
-    dryRun: false,
+    execute: false,
     concurrency: 5,
     output: './reports'
   };
@@ -40,8 +40,16 @@ function parseArgs() {
       case '--region':
         options.region = args[++i];
         break;
+      case '--execute':
+        // Opt-in to real execution against AWS. Without this flag the tool only
+        // validates the config and builds the test JSON (dry run) — SPEC §8 safety model:
+        // dry-run is the DEFAULT, real execution requires explicit opt-in.
+        options.execute = true;
+        break;
       case '--dry-run':
-        options.dryRun = true;
+        // Accepted for backward compatibility and explicitness. Dry run is already the
+        // default; this flag forces it even if --execute was also (mistakenly) passed.
+        options.forceDryRun = true;
         break;
       case '--concurrency':
         options.concurrency = Math.min(parseInt(args[++i], 10), 5);
@@ -58,14 +66,20 @@ Usage: node src/index.js [options]
 Options:
   --config <path>     Path to test suite configuration (default: ./tests/suite-config.json)
   --region <region>   AWS region (default: us-east-1)
-  --dry-run           Validate configuration without executing tests
-  --concurrency <n>   Max concurrent test executions (default: 5, max: 5)
+  --execute           Execute tests against AWS. WITHOUT this flag the tool only validates
+                      the config and builds test JSON (dry run) — nothing runs against AWS.
+  --dry-run           Force validation-only mode (this is already the default; use to be explicit)
+  --concurrency <n>   Max concurrent test executions (default: 5, max: 5). Use 1 for voice suites.
   --output <path>     Output directory for reports (default: ./reports)
   --help              Show this help message
 `);
         process.exit(0);
     }
   }
+
+  // Dry run is the default. Real execution happens ONLY when --execute is passed and
+  // --dry-run was not explicitly used to force validation-only.
+  options.dryRun = !options.execute || options.forceDryRun === true;
 
   return options;
 }
@@ -80,7 +94,7 @@ async function main() {
   console.log(`  Config:      ${options.config}`);
   console.log(`  Region:      ${options.region}`);
   console.log(`  Concurrency: ${options.concurrency}`);
-  console.log(`  Dry Run:     ${options.dryRun}`);
+  console.log(`  Mode:        ${options.dryRun ? 'DRY RUN (validate only — nothing runs against AWS)' : 'EXECUTE (live run against AWS)'}`);
   console.log('═══════════════════════════════════════════════════════════════\n');
 
   // Step 1: Load and validate configuration
@@ -101,12 +115,13 @@ async function main() {
   const overrideCount = processedTestCases.filter(tc => tc.hasHoursOverride).length;
   console.log(`      ✓ ${overrideCount} test case(s) have hours-of-operation overrides\n`);
 
-  // Step 3: Execute tests (or validate in dry-run mode)
+  // Step 3: Execute tests (or validate in dry-run mode).
+  // Dry run is the DEFAULT (SPEC §8): nothing runs against AWS unless --execute is passed.
   if (options.dryRun) {
     console.log('[3/4] Dry run mode — skipping test execution');
     console.log('      ✓ Configuration is valid. Tests would execute successfully.\n');
     console.log('[4/4] Skipping report generation in dry-run mode.\n');
-    console.log('Dry run complete. No tests were executed.');
+    console.log('Dry run complete. No tests were executed. Re-run with --execute to run against AWS.');
     process.exit(0);
   }
 

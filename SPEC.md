@@ -79,6 +79,11 @@ Statuses: `INITIATED | IN_PROGRESS | PASSED | FAILED | STOPPED`.
 ### 3.2 Service limits (design around these)
 - **5 concurrent executions** max. Additional requests → `INITIALIZATION_FAILURE`
   ("limit reached"). Runner MUST cap concurrency at 5 and queue the rest.
+- **Even within the cap, simultaneous voice initializations can collide (VERIFIED).** Starting
+  two voice executions at the same instant against the same flow has been observed to fail one
+  of them fast (~6s) with `INITIALIZATION_FAILURE`. For small voice suites, run with
+  `--concurrency 1` (sequential); reserve higher concurrency for larger suites where the
+  throughput matters and occasional re-runs are acceptable.
 - **100 executions** max in queue.
 - **5-minute timeout** per execution. An unmatched observation runs until timeout → `FAILED`
   with `CompletionReason.Type = TIMEOUT`, `FailureReasons = ["OBSERVE_EVENT"]`.
@@ -239,6 +244,11 @@ messaging). Therefore:
    | `MessageReceived` + `Similarity`    | Medium — semantic | tolerant of minor wording changes |
    | `MessageReceived` + `Inclusion`     | Low — substring | brittle; breaks on any copy change |
 
+   > `action_triggered` is observable for a **closed set** of flow-action types only (see
+   > §4A.1). It does NOT cover every block — notably not `TransferParticipantToThirdParty`
+   > (external transfer). For paths ending in a non-observable action, fall back to the
+   > prompt rows above.
+
    For "did the caller reach the right place," assert on the **routing event + target
    resource** (e.g., queue transfer + `$.Queue.Name`) rather than the prompt text. This is
    portable across any contact center.
@@ -250,14 +260,58 @@ messaging). Therefore:
 4. **When you do observe a message, default to `Similarity`, not `Contains`.** Reserve
    `Contains` for cases where an exact, stable substring is genuinely required.
 
-5. **Voice caveat.** Voice audio is segmented by the simulator based on pauses/speech
-   patterns, so exact-text matching on voice prompts is especially unreliable. Favor
-   event/attribute assertions for voice; use `Similarity` if a message check is required.
+5. **Voice caveat — use the FULL prompt text, not a fragment (VERIFIED).** Voice audio is
+   segmented by the simulator and the spoken prompt is transcribed before matching, so exact
+   substring matching on voice is unreliable. Two rules verified empirically against a live
+   instance:
+   - **Match the complete prompt text, never a short fragment.** A `MessageReceived`
+     observation whose `Text` is a short slice of a long prompt (e.g. `"For sales press 1"`
+     against a five-option menu) scores too low under `Similarity` and **never matches**,
+     producing a 5-minute `OBSERVE_EVENT` timeout — not a fast failure. Supplying the whole
+     prompt text matches reliably. `Similarity` tolerates minor transcription differences
+     (e.g. `"1"` voiced/transcribed as `"one"`, dropped punctuation, dynamic attributes that
+     resolve to empty strings), so the full declared text need not be character-perfect.
+   - Prefer `Similarity` for all voice message checks; reserve `Inclusion` (API enum for the
+     console's "Contains") for chat or for a genuinely stable exact substring.
+
+6. **Prompts from input-gathering blocks ARE observable.** A `GetParticipantInput` block's
+   prompt surfaces as a normal `MessageReceived` event (same as a `MessageParticipant`), so you
+   observe it and attach the `send_dtmf`/`send_text` action to that same observation. (The input
+   must be sent from the observation that matches the prompt; see sequencing note below.)
+
+### 4A.1 Observable `FlowActionStarted` ActionTypes (VERIFIED — closed set)
+
+`action_triggered` (`FlowActionStarted`) can observe ONLY these flow-action types:
+
+| ActionType                     | Required `ActionParameters` key |
+|--------------------------------|---------------------------------|
+| `InvokeLambdaFunction`         | `LambdaFunctionARN`             |
+| `CheckHoursOfOperation`        | `HoursOfOperationId`            |
+| `TransferContactToQueue`       | `QueueId` (optional `AgentId`)  |
+| `ConnectParticipantWithLexBot` | `LexV2Bot.AliasArn`             |
+| `ConnectParticipantWithAgenticCX` | (per docs)                   |
+
+**Any other flow action is NOT observable** and cannot be asserted on. In particular,
+**`TransferParticipantToThirdParty` (external/third-party transfer) is NOT in this set** — a
+test that observes `action_triggered` for it is rejected at publish time with
+`InvalidTestCaseException: Invalid test case content`. To validate an external-transfer path,
+assert on the surrounding **prompts** instead (the message played just before the transfer, or
+the downstream flow's first prompt if a `TransferToFlow` precedes it), and end the test before
+the real PSTN dial connects.
+
+### 4A.2 Observation sequencing (VERIFIED)
+
+Observations are matched **strictly in order**, and the engine consumes each system message as
+it arrives. If a flow emits two messages back-to-back (e.g. a greeting immediately followed by a
+menu), an observation that is not yet active when the second message plays will miss it and then
+time out. Practical rule: **observe every system message the flow emits, in order**, as waypoints
+— do not skip an intermediate prompt expecting to "jump" to a later one. When a `TransferToFlow`
+hands off to another flow, continue observing that downstream flow's messages in sequence.
 
 Loader guidance: a test with zero observations beyond `test_started` and no
 event/attribute assertion is not meaningfully validating anything — warn on it. A test that
-asserts only on prompt `Contains` for voice should emit an advisory to consider event-based
-validation.
+asserts only on prompt `Contains`/`Inclusion` for voice should emit an advisory to prefer the
+full-text `Similarity` match (rule 5 above) or event/attribute validation.
 
 ---
 
@@ -272,6 +326,17 @@ validation.
 `CompletionReason.Type` values seen: `SUCCESS`, `TIMEOUT`, `FAILURE`.
 `FailureReasons` values seen: `OBSERVE_EVENT` (observation never matched),
 `INITIALIZATION_FAILURE` (concurrency/limit).
+
+**Two failure modes are easy to confuse — distinguish them when diagnosing:**
+- **Publish-time rejection** (fast, before any execution): `CreateTestCase` throws
+  `InvalidTestCaseException: Invalid test case content`. The test never runs, so there are NO
+  execution records. Causes: a non-observable `FlowActionStarted` ActionType (§4A.1), a
+  malformed schema, or a Lambda mock with an object (not JSON-string) `Value` (§4.5). A whole
+  suite failing in <1s total is this, not a flow regression.
+- **Execution-time timeout** (slow, ~5 min): the test publishes and runs, but an observation
+  never matches → `TIMEOUT` / `OBSERVE_EVENT`. Most common cause on voice is a prompt
+  `MessageReceived` matched on a fragment instead of the full text (§4A rule 5), or a skipped
+  intermediate message (§4A.2) — not necessarily a flow defect.
 
 The report should surface, per test: overall status, observation pass/fail counts, the
 first failing step, the `CompletionReason`, and the simulated `ContactId`.

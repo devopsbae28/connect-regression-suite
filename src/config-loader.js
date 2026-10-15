@@ -69,13 +69,17 @@ function validateTestCase(testCase, index) {
     throw new Error(`${prefix}.channel must be one of: ${validChannels.join(', ')}`);
   }
 
-  // Voice call requires phone numbers
+  // Voice call: SPEC §3.3 — FlowId alone is sufficient for the entry point. Phone numbers
+  // are OPTIONAL, but if either is supplied, BOTH must be supplied together (the live API
+  // rejects a lone SourcePhoneNumber or DestinationPhoneNumber), and both must be numbers
+  // actually claimed to this Connect instance — unclaimed/fake numbers cause the API to
+  // reject the entire entry point with "Must specify either FlowId or phone numbers"
+  // (verified against the live Testing Simulations API).
   if (testCase.channel === 'VOICE_CALL') {
-    if (!testCase.sourcePhoneNumber) {
-      throw new Error(`${prefix}.sourcePhoneNumber is required for VOICE_CALL channel`);
-    }
-    if (!testCase.destinationPhoneNumber) {
-      throw new Error(`${prefix}.destinationPhoneNumber is required for VOICE_CALL channel`);
+    const hasSource = !!testCase.sourcePhoneNumber;
+    const hasDest = !!testCase.destinationPhoneNumber;
+    if (hasSource !== hasDest) {
+      throw new Error(`${prefix}.sourcePhoneNumber and ${prefix}.destinationPhoneNumber must both be supplied together, or both omitted (FlowId alone is sufficient)`);
     }
   }
 

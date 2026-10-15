@@ -195,9 +195,11 @@ class SimulationRunner {
         evt.Type = 'FlowActionStarted';
         // ActionParameters carrying the specific resource identity is REQUIRED for a match
         // (e.g., { LambdaFunctionARN } for Lambda, { QueueId } for a queue transfer).
+        // Accept both camelCase (actionType/actionParameters) and the snake_case config
+        // convention (action_type/action_parameters) used in suite-config.json examples.
         evt.Properties = {
-          ActionType: observe.actionType,
-          ActionParameters: observe.actionParameters || {}
+          ActionType: observe.actionType || observe.action_type,
+          ActionParameters: observe.actionParameters || observe.action_parameters || {}
         };
         break;
 
@@ -211,6 +213,7 @@ class SimulationRunner {
 
   /**
    * Build an Assert action (validates an attribute). Note: Assert Parameters do NOT echo ActionType.
+   * Accepts both camelCase (namespace/operand) and snake_case/legacy (key/expectedValue) config fields.
    */
   buildAssert(check, id) {
     return {
@@ -242,7 +245,9 @@ class SimulationRunner {
           Parameters: {
             ActionType: 'SendInstruction',
             Actor: 'Customer',
-            Instruction: { Type: 'DtmfInput', Properties: { Value: action.value } }
+            // DTMF Value MUST be a number (SPEC §4.5). Coerce defensively since config
+            // authors commonly write digits as quoted strings (e.g. "1").
+            Instruction: { Type: 'DtmfInput', Properties: { Value: Number(action.value) } }
           },
           Transitions: {}
         };
@@ -295,17 +300,18 @@ class SimulationRunner {
 
   /**
    * Build the entry point configuration based on channel type.
+   * Per SPEC §3.3, FlowId alone is sufficient for voice; phone numbers are optional and,
+   * if used, must both be present together AND be numbers actually claimed to the instance
+   * (unclaimed/fake numbers cause the live API to reject the whole entry point — verified).
    */
   buildEntryPoint(testCase) {
     if (testCase.channel === 'VOICE_CALL') {
-      return {
-        Type: 'VOICE_CALL',
-        VoiceCallEntryPointParameters: {
-          SourcePhoneNumber: testCase.sourcePhoneNumber,
-          DestinationPhoneNumber: testCase.destinationPhoneNumber,
-          FlowId: testCase.flowId
-        }
-      };
+      const params = { FlowId: testCase.flowId };
+      if (testCase.sourcePhoneNumber && testCase.destinationPhoneNumber) {
+        params.SourcePhoneNumber = testCase.sourcePhoneNumber;
+        params.DestinationPhoneNumber = testCase.destinationPhoneNumber;
+      }
+      return { Type: 'VOICE_CALL', VoiceCallEntryPointParameters: params };
     }
 
     return {

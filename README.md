@@ -37,11 +37,11 @@ npm install
 cp tests/suite-config.json tests/my-suite.json
 # Edit my-suite.json with your instance ID, flow IDs, and phone numbers
 
-# 4. Validate configuration (dry run)
-node src/index.js --config tests/my-suite.json --dry-run
+# 4. Validate configuration (dry run — this is the DEFAULT; nothing runs against AWS)
+node src/index.js --config tests/my-suite.json
 
-# 5. Run the regression suite
-node src/index.js --config tests/my-suite.json --region us-east-1
+# 5. Run the regression suite (--execute is REQUIRED to run against AWS)
+node src/index.js --config tests/my-suite.json --region us-east-1 --execute
 
 # 6. View the report
 open reports/latest-report.html
@@ -53,8 +53,9 @@ open reports/latest-report.html
 |--------|---------|-------------|
 | `--config <path>` | `./tests/suite-config.json` | Path to test suite configuration file |
 | `--region <region>` | `us-east-1` | AWS region where your Connect instance lives |
-| `--dry-run` | `false` | Validate config without executing tests |
-| `--concurrency <n>` | `5` | Max concurrent test executions (1–5) |
+| `--execute` | `false` | Run tests against AWS. **Without this flag the tool only validates (dry run)** — nothing runs against AWS |
+| `--dry-run` | `true` | Force validation-only mode (already the default; use to be explicit) |
+| `--concurrency <n>` | `5` | Max concurrent test executions (1–5). Use `1` for voice suites |
 | `--output <path>` | `./reports` | Output directory for HTML reports |
 | `--help` | — | Display help information |
 
@@ -210,7 +211,7 @@ The CLI exits with code `1` when any test fails, making it suitable for pipeline
   run: |
     cd connect-regression-suite
     npm install
-    node src/index.js --config tests/production-suite.json --region us-east-1
+    node src/index.js --config tests/production-suite.json --region us-east-1 --execute
   env:
     AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
     AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
